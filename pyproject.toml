@@ -1,0 +1,56 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "keeb-coach"
+version = "0.0.1"
+description = "Your terminal has a personal trainer now. Grades how efficiently you type."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+authors = [{ name = "rwrife" }]
+keywords = ["cli", "shell", "history", "productivity", "aliases", "ergonomics"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Utilities",
+]
+dependencies = [
+  "rich>=13.7",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "ruff>=0.5",
+]
+
+[project.scripts]
+keeb-coach = "keeb_coach.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/rwrife/keeb-coach"
+Issues = "https://github.com/rwrife/keeb-coach/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/keeb_coach"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/keeb_coach", "README.md", "PLAN.md", "LICENSE"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
