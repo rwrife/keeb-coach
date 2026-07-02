@@ -30,18 +30,18 @@ def detect_shell() -> str:
 
 def _candidate_paths(shell: str) -> list[Path]:
     home = Path.home()
+    histfile = os.environ.get("HISTFILE")
+    if histfile:
+        # $HISTFILE always wins — bash & zsh both honor it.
+        return [Path(histfile)]
     if shell == "bash":
-        return [
-            Path(os.environ["HISTFILE"]) if os.environ.get("HISTFILE") else home / ".bash_history",
-        ]
+        return [home / ".bash_history"]
     if shell == "zsh":
-        return [
-            Path(os.environ["HISTFILE"]) if os.environ.get("HISTFILE") else home / ".zsh_history",
-        ]
+        return [home / ".zsh_history"]
     if shell == "fish":
         xdg = os.environ.get("XDG_DATA_HOME") or str(home / ".local" / "share")
         return [Path(xdg) / "fish" / "fish_history"]
-    # unknown — try the common ones in order
+    # unknown — try the common ones in order.
     return [
         home / ".zsh_history",
         home / ".bash_history",

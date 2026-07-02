@@ -21,6 +21,19 @@ keeb-coach score          # grade your last 30 days
 keeb-coach fixes          # get copy-paste aliases for your worst habits
 ```
 
+### What `score` shows today (M2)
+
+Right now `keeb-coach score` ingests your bash or zsh history and reports:
+
+- **Total commands** and the timestamp range it saw
+- The **top 10 commands** by invocation count
+
+Detectors, letter grade, and the roast lines all land in M3+. Point `keeb-coach` at any history file with `$HISTFILE`:
+
+```bash
+HISTFILE=~/.zsh_history keeb-coach score
+```
+
 ## Principles
 
 - 🔒 **100% local.** Reads your shell history file. No network, no telemetry, no daemon.
@@ -29,7 +42,7 @@ keeb-coach fixes          # get copy-paste aliases for your worst habits
 
 ## Status
 
-🚧 Early — see [`PLAN.md`](./PLAN.md) and the milestone issues. Currently scaffolding (M1).
+🚧 Early — see [`PLAN.md`](./PLAN.md) and the milestone issues. **M1 scaffold + M2 history ingestion (bash + zsh) shipped.** Next up: M3 (first detectors + scoring skeleton).
 
 ## License
 

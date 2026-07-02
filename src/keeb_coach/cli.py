@@ -4,13 +4,17 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections import Counter
 from collections.abc import Sequence
+from datetime import datetime
 
 from rich.console import Console
 from rich.panel import Panel
+from rich.table import Table
 
 from . import __version__
 from .history.loader import find_history
+from .history.parser import Command, parse_file
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -35,27 +39,72 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _date_range(cmds: Sequence[Command]) -> tuple[datetime | None, datetime | None]:
+    stamps = [c.ts for c in cmds if c.ts is not None]
+    if not stamps:
+        return None, None
+    return min(stamps), max(stamps)
+
+
+def _fmt_ts(ts: datetime | None) -> str:
+    return ts.strftime("%Y-%m-%d %H:%M UTC") if ts else "unknown"
+
+
+def _top_commands(cmds: Sequence[Command], n: int = 10) -> list[tuple[str, int]]:
+    counter: Counter[str] = Counter()
+    for cmd in cmds:
+        prog = cmd.program
+        if prog:
+            counter[prog] += 1
+    return counter.most_common(n)
+
+
 def cmd_score(args: argparse.Namespace, console: Console) -> int:
-    """M1 hello-world: report the detected history file and warm up."""
+    """M2: parse history and print totals, date range, and top-10 commands."""
     src = find_history()
-    body_lines = [
+    header_lines = [
         "[bold]Coach is warming up 🏋️[/bold]",
         "",
         f"Detected shell: [cyan]{src.shell}[/cyan]",
         f"History file:   [cyan]{src.path}[/cyan]",
         f"Exists:         {'[green]yes[/green]' if src.exists else '[yellow]no[/yellow]'}",
     ]
+
     if not src.exists:
-        body_lines.append("")
-        body_lines.append(
+        header_lines.append("")
+        header_lines.append(
             "[dim]No history file yet — nothing to grade. "
             "Run some commands first, coach.[/dim]"
         )
-    else:
-        body_lines.append("")
-        body_lines.append("[dim]M1 scaffold only — real scoring lands in M3.[/dim]")
+        console.print(
+            Panel.fit("\n".join(header_lines), title="keeb-coach", border_style="magenta")
+        )
+        return 0
 
-    console.print(Panel.fit("\n".join(body_lines), title="keeb-coach", border_style="magenta"))
+    commands = parse_file(src.shell, src.path)
+    earliest, latest = _date_range(commands)
+    header_lines.extend(
+        [
+            "",
+            f"Total commands: [bold]{len(commands)}[/bold]",
+            f"Date range:     {_fmt_ts(earliest)}  →  {_fmt_ts(latest)}",
+        ]
+    )
+    console.print(Panel.fit("\n".join(header_lines), title="keeb-coach", border_style="magenta"))
+
+    top = _top_commands(commands, n=10)
+    if top:
+        table = Table(title="Top 10 commands", header_style="bold magenta")
+        table.add_column("#", justify="right", style="dim", no_wrap=True)
+        table.add_column("command", style="cyan", no_wrap=True)
+        table.add_column("count", justify="right", style="green")
+        for i, (prog, count) in enumerate(top, start=1):
+            table.add_row(str(i), prog, str(count))
+        console.print(table)
+    else:
+        console.print("[dim]No parsable commands found.[/dim]")
+
+    console.print("[dim]M2 ingestion only — real scoring lands in M3.[/dim]")
     return 0
 
 
