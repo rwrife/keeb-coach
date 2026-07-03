@@ -32,6 +32,19 @@ def test_find_history_uses_histfile_env(
     assert src.exists is True
 
 
+def test_find_history_histfile_wins_for_zsh_too(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    fake = tmp_path / "zsh_hist"
+    fake.write_text(": 1700000000:0;echo hi\n")
+    monkeypatch.setenv("SHELL", "/bin/zsh")
+    monkeypatch.setenv("HISTFILE", str(fake))
+    src = loader.find_history()
+    assert src.shell == "zsh"
+    assert src.path == fake
+    assert src.exists is True
+
+
 def test_find_history_missing_returns_primary_candidate(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
