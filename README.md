@@ -21,14 +21,18 @@ keeb-coach score          # grade your last 30 days
 keeb-coach fixes          # get copy-paste aliases for your worst habits
 ```
 
-### What `score` shows today (M2)
+### What `score` shows today (M3)
 
 Right now `keeb-coach score` ingests your bash or zsh history and reports:
 
 - **Total commands** and the timestamp range it saw
-- The **top 10 commands** by invocation count
+- An **efficiency scorecard** with a letter grade (A–F) and per-finding severity
+- Findings from two detectors:
+  - `missing_alias` — commands you retype often enough to deserve an alias
+  - `slow_tool` — `grep`→`rg`, `find`→`fd`, `cat`→`bat`, `ls -la`→`eza`
+- The **top N commands** by invocation count (`--top N`, default 10)
 
-Detectors, letter grade, and the roast lines all land in M3+. Point `keeb-coach` at any history file with `$HISTFILE`:
+The remaining v0.1 detectors (`long_path`, `sudo_redo`) and roast lines land in M4. Point `keeb-coach` at any history file with `$HISTFILE`:
 
 ```bash
 HISTFILE=~/.zsh_history keeb-coach score
@@ -42,7 +46,7 @@ HISTFILE=~/.zsh_history keeb-coach score
 
 ## Status
 
-🚧 Early — see [`PLAN.md`](./PLAN.md) and the milestone issues. **M1 scaffold + M2 history ingestion (bash + zsh) shipped.** Next up: M3 (first detectors + scoring skeleton).
+🚧 Early — see [`PLAN.md`](./PLAN.md) and the milestone issues. **M1 scaffold + M2 history ingestion + M3 first detectors & scoring shipped.** Next up: M4 (remaining v0.1 detectors + roasts).
 
 ## License
 
