@@ -1,3 +1,3 @@
 """KeebCoach — a personal trainer for your terminal."""
 
-__version__ = "0.0.3"
+__version__ = "0.0.4"

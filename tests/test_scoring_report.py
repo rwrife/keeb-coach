@@ -104,3 +104,32 @@ def test_render_scorecard_with_findings() -> None:
     assert "med" in out
     # No "clean sheet" copy when findings exist.
     assert "Clean sheet" not in out
+    # M4: one roast line per weak area, under the "Coach's take" heading.
+    assert "Coach's take" in out
+
+
+def test_render_scorecard_roasts_one_per_detector() -> None:
+    console = Console(file=io.StringIO(), force_terminal=False, width=120)
+    findings = [
+        Finding(detector="missing_alias", severity=Severity.HIGH, message="x"),
+        Finding(detector="missing_alias", severity=Severity.LOW, message="y"),
+        Finding(detector="slow_tool", severity=Severity.MEDIUM, message="z"),
+        Finding(detector="long_path", severity=Severity.LOW, message="q"),
+        Finding(detector="sudo_redo", severity=Severity.HIGH, message="r"),
+    ]
+    scorecard = score_findings(findings, total_commands=100)
+    render_scorecard(scorecard, console)
+    out = console.file.getvalue()
+    # Every detector that fired appears exactly once in the roast section.
+    roast_section = out.split("Coach's take", 1)[1]
+    for detector_id in ("missing_alias", "slow_tool", "long_path", "sudo_redo"):
+        assert roast_section.count(detector_id) == 1, detector_id
+    # HIGH-severity roast text for missing_alias should win over LOW.
+    assert "Alias it." in out
+
+
+def test_render_scorecard_no_roast_section_when_clean() -> None:
+    console = Console(file=io.StringIO(), force_terminal=False, width=100)
+    scorecard = score_findings([], total_commands=5)
+    render_scorecard(scorecard, console)
+    assert "Coach's take" not in console.file.getvalue()

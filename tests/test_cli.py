@@ -79,3 +79,27 @@ def test_score_command_with_zsh_fixture(
     assert "git" in out
     assert "Efficiency scorecard" in out
     assert "missing_alias" in out
+
+
+def test_score_command_with_custom_config(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    # Bash fixture has `git status` × 5 — default min_count is 4 so
+    # the alias detector already fires. Crank thresholds up so the
+    # config actually silences it, proving the CLI wires config through.
+    monkeypatch.setenv("SHELL", "/bin/bash")
+    monkeypatch.setenv("HISTFILE", str(FIXTURES / "bash_history.txt"))
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(
+        "[detectors.missing_alias]\nmin_count = 999\nmin_length = 999\n"
+        "[detectors.slow_tool]\nmin_count = 999\n"
+        "[detectors.long_path]\nmin_count = 999\n"
+        "[detectors.sudo_redo]\nmin_count = 999\n"
+    )
+    rc = main(["score", "--config", str(cfg)])
+    assert rc == 0
+    out = capsys.readouterr().out
+    # With every threshold neutralized, no findings should surface.
+    assert "Clean sheet" in out
