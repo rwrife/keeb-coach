@@ -13,8 +13,12 @@ from rich.panel import Panel
 from rich.table import Table
 
 from . import __version__
+from .detectors import ALL_DETECTORS
+from .detectors.base import Finding
 from .history.loader import find_history
 from .history.parser import Command, parse_file
+from .report import render_scorecard
+from .scoring import score_findings
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -34,7 +38,13 @@ def _build_parser() -> argparse.ArgumentParser:
         "--days",
         type=int,
         default=30,
-        help="How many days of history to grade (default: 30). [reserved for M2+]",
+        help="How many days of history to grade (default: 30). [reserved for M4]",
+    )
+    score.add_argument(
+        "--top",
+        type=int,
+        default=10,
+        help="Show the top N most-run programs (default: 10).",
     )
     return parser
 
@@ -59,8 +69,16 @@ def _top_commands(cmds: Sequence[Command], n: int = 10) -> list[tuple[str, int]]
     return counter.most_common(n)
 
 
+def _run_detectors(commands: Sequence[Command]) -> list[Finding]:
+    """Run every registered detector and flatten their findings."""
+    findings: list[Finding] = []
+    for detector in ALL_DETECTORS:
+        findings.extend(detector.run(commands))
+    return findings
+
+
 def cmd_score(args: argparse.Namespace, console: Console) -> int:
-    """M2: parse history and print totals, date range, and top-10 commands."""
+    """M3: parse history, run detectors, print scorecard."""
     src = find_history()
     header_lines = [
         "[bold]Coach is warming up 🏋️[/bold]",
@@ -92,19 +110,21 @@ def cmd_score(args: argparse.Namespace, console: Console) -> int:
     )
     console.print(Panel.fit("\n".join(header_lines), title="keeb-coach", border_style="magenta"))
 
-    top = _top_commands(commands, n=10)
+    findings = _run_detectors(commands)
+    scorecard = score_findings(findings, total_commands=len(commands))
+    render_scorecard(scorecard, console)
+
+    top = _top_commands(commands, n=args.top)
     if top:
-        table = Table(title="Top 10 commands", header_style="bold magenta")
+        table = Table(title=f"Top {len(top)} commands", header_style="bold magenta")
         table.add_column("#", justify="right", style="dim", no_wrap=True)
         table.add_column("command", style="cyan", no_wrap=True)
         table.add_column("count", justify="right", style="green")
         for i, (prog, count) in enumerate(top, start=1):
             table.add_row(str(i), prog, str(count))
         console.print(table)
-    else:
-        console.print("[dim]No parsable commands found.[/dim]")
 
-    console.print("[dim]M2 ingestion only — real scoring lands in M3.[/dim]")
+    console.print("[dim]M3 scoring — remaining detectors + roasts land in M4.[/dim]")
     return 0
 
 

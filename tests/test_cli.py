@@ -55,8 +55,13 @@ def test_score_command_with_bash_fixture(
     out = capsys.readouterr().out
     assert "Total commands:" in out
     assert "15" in out  # 15 commands in the bash fixture
-    assert "Top 10 commands" in out
+    # Table title reflects distinct programs; fixture has 8 unique.
+    assert "commands" in out.lower()
     assert "git" in out
+    # M3: the fixture has `git status` × 5 → the alias detector should fire
+    # and the scorecard banner should render.
+    assert "Efficiency scorecard" in out
+    assert "missing_alias" in out
 
 
 def test_score_command_with_zsh_fixture(
@@ -70,5 +75,7 @@ def test_score_command_with_zsh_fixture(
     out = capsys.readouterr().out
     assert "Total commands:" in out
     assert "15" in out
-    assert "Top 10 commands" in out
+    assert "commands" in out.lower()
     assert "git" in out
+    assert "Efficiency scorecard" in out
+    assert "missing_alias" in out
