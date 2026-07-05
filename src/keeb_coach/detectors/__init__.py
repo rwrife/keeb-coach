@@ -9,20 +9,26 @@ detector by dropping a file next to this one, exporting a subclass of
 from __future__ import annotations
 
 from .base import Detector, Finding, Severity
+from .long_path import LongPathDetector
 from .missing_alias import MissingAliasDetector
 from .slow_tool import SlowToolDetector
+from .sudo_redo import SudoRedoDetector
 
 # Registry order is stable and drives the default scoring/report ordering.
 ALL_DETECTORS: tuple[Detector, ...] = (
     MissingAliasDetector(),
     SlowToolDetector(),
+    LongPathDetector(),
+    SudoRedoDetector(),
 )
 
 __all__ = [
     "ALL_DETECTORS",
     "Detector",
     "Finding",
+    "LongPathDetector",
     "MissingAliasDetector",
     "Severity",
     "SlowToolDetector",
+    "SudoRedoDetector",
 ]

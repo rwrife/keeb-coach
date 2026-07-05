@@ -7,12 +7,14 @@ import sys
 from collections import Counter
 from collections.abc import Sequence
 from datetime import datetime
+from pathlib import Path
 
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
 from . import __version__
+from .config import load_config
 from .detectors import ALL_DETECTORS
 from .detectors.base import Finding
 from .history.loader import find_history
@@ -46,6 +48,12 @@ def _build_parser() -> argparse.ArgumentParser:
         default=10,
         help="Show the top N most-run programs (default: 10).",
     )
+    score.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="Path to a TOML config file (default: ~/.config/keeb-coach/config.toml).",
+    )
     return parser
 
 
@@ -69,11 +77,23 @@ def _top_commands(cmds: Sequence[Command], n: int = 10) -> list[tuple[str, int]]
     return counter.most_common(n)
 
 
-def _run_detectors(commands: Sequence[Command]) -> list[Finding]:
-    """Run every registered detector and flatten their findings."""
+def _run_detectors(
+    commands: Sequence[Command],
+    config: dict[str, object] | None = None,
+) -> list[Finding]:
+    """Run every registered detector and flatten their findings.
+
+    Each detector receives the ``detectors`` sub-dict directly so it can
+    pluck its own ``[detectors.<id>]`` section from the merged config.
+    """
+    detector_cfg: dict[str, object] | None = None
+    if config is not None:
+        raw = config.get("detectors")
+        if isinstance(raw, dict):
+            detector_cfg = raw
     findings: list[Finding] = []
     for detector in ALL_DETECTORS:
-        findings.extend(detector.run(commands))
+        findings.extend(detector.run(commands, detector_cfg))
     return findings
 
 
@@ -99,6 +119,7 @@ def cmd_score(args: argparse.Namespace, console: Console) -> int:
         )
         return 0
 
+    config = load_config(args.config)
     commands = parse_file(src.shell, src.path)
     earliest, latest = _date_range(commands)
     header_lines.extend(
@@ -110,7 +131,7 @@ def cmd_score(args: argparse.Namespace, console: Console) -> int:
     )
     console.print(Panel.fit("\n".join(header_lines), title="keeb-coach", border_style="magenta"))
 
-    findings = _run_detectors(commands)
+    findings = _run_detectors(commands, config)
     scorecard = score_findings(findings, total_commands=len(commands))
     render_scorecard(scorecard, console)
 
@@ -124,7 +145,7 @@ def cmd_score(args: argparse.Namespace, console: Console) -> int:
             table.add_row(str(i), prog, str(count))
         console.print(table)
 
-    console.print("[dim]M3 scoring — remaining detectors + roasts land in M4.[/dim]")
+    console.print("[dim]M4: v0.1 detector set + roasts + config online.[/dim]")
     return 0
 
 

@@ -21,22 +21,51 @@ keeb-coach score          # grade your last 30 days
 keeb-coach fixes          # get copy-paste aliases for your worst habits
 ```
 
-### What `score` shows today (M3)
+### What `score` shows today (M4)
 
 Right now `keeb-coach score` ingests your bash or zsh history and reports:
 
 - **Total commands** and the timestamp range it saw
 - An **efficiency scorecard** with a letter grade (A–F) and per-finding severity
-- Findings from two detectors:
+- Findings from the full v0.1 detector set:
   - `missing_alias` — commands you retype often enough to deserve an alias
   - `slow_tool` — `grep`→`rg`, `find`→`fd`, `cat`→`bat`, `ls -la`→`eza`
+  - `long_path` — deep `cd` targets you keep retyping instead of `cd -` / `zoxide`
+  - `sudo_redo` — the “forgot sudo, retyped the whole thing” classic
+- A **Coach's take** section — one witty roast line per weak area
 - The **top N commands** by invocation count (`--top N`, default 10)
 
-The remaining v0.1 detectors (`long_path`, `sudo_redo`) and roast lines land in M4. Point `keeb-coach` at any history file with `$HISTFILE`:
+The M5 `fixes` command — which turns these findings into a copy-paste alias file — is next.
+
+Point `keeb-coach` at any history file with `$HISTFILE`:
 
 ```bash
 HISTFILE=~/.zsh_history keeb-coach score
 ```
+
+### Configuration
+
+All thresholds are tunable via `~/.config/keeb-coach/config.toml` (or
+`$XDG_CONFIG_HOME/keeb-coach/config.toml`). Missing file → defaults.
+Broken file → defaults (and no crash). Example:
+
+```toml
+[detectors.missing_alias]
+min_count = 6      # only nag me about commands I've run 6+ times
+min_length = 10
+
+[detectors.slow_tool.replacements]
+"grep" = "ugrep"   # override the default suggestion
+"top" = "btop"     # add a new slow-tool rule
+
+[detectors.long_path]
+min_depth = 4
+
+[detectors.sudo_redo]
+min_count = 1      # flag me the very first time I retype
+```
+
+Point at an explicit file with `keeb-coach score --config path/to/keeb.toml`.
 
 ## Principles
 
@@ -46,7 +75,7 @@ HISTFILE=~/.zsh_history keeb-coach score
 
 ## Status
 
-🚧 Early — see [`PLAN.md`](./PLAN.md) and the milestone issues. **M1 scaffold + M2 history ingestion + M3 first detectors & scoring shipped.** Next up: M4 (remaining v0.1 detectors + roasts).
+🚧 Early — see [`PLAN.md`](./PLAN.md) and the milestone issues. **M1 scaffold + M2 history ingestion + M3 first detectors & scoring + M4 remaining detectors, roasts, and config shipped.** Next up: M5 (`fixes` command — opt-in alias generation).
 
 ## License
 
