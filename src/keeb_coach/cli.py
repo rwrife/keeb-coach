@@ -17,6 +17,12 @@ from . import __version__
 from .config import load_config
 from .detectors import ALL_DETECTORS
 from .detectors.base import Finding
+from .fixes import (
+    ForbiddenTargetError,
+    render_stdout,
+    snippets_for,
+    write_managed_block,
+)
 from .history.loader import find_history
 from .history.parser import Command, parse_file
 from .report import render_scorecard
@@ -53,6 +59,33 @@ def _build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help="Path to a TOML config file (default: ~/.config/keeb-coach/config.toml).",
+    )
+
+    fixes = sub.add_parser(
+        "fixes",
+        help="Turn findings into copy-paste alias/function snippets.",
+        description=(
+            "Emit shell snippets (aliases/functions) for the current findings. "
+            "Prints to stdout by default; pass --write PATH to update a managed "
+            "block in a dedicated file (never .bashrc/.zshrc — we refuse those)."
+        ),
+    )
+    fixes.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="Path to a TOML config file (default: ~/.config/keeb-coach/config.toml).",
+    )
+    fixes.add_argument(
+        "--write",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help=(
+            "Write snippets into PATH (default suggestion: ~/.keeb_aliases). "
+            "Re-running is idempotent — the managed block is replaced in place, "
+            "never appended."
+        ),
     )
     return parser
 
@@ -149,6 +182,53 @@ def cmd_score(args: argparse.Namespace, console: Console) -> int:
     return 0
 
 
+def cmd_fixes(args: argparse.Namespace, console: Console) -> int:
+    """M5: emit alias snippets for the current findings.
+
+    Same detection pipeline as ``score`` — we don't invent findings
+    here, we just render them. That means ``fixes`` and ``score``
+    always agree about what needs fixing.
+    """
+    src = find_history()
+    if not src.exists:
+        console.print(
+            "[yellow]No history file yet — nothing to fix.[/yellow] "
+            f"[dim](looked for: {src.path})[/dim]"
+        )
+        return 0
+
+    config = load_config(args.config)
+    commands = parse_file(src.shell, src.path)
+    findings = _run_detectors(commands, config)
+    scorecard = score_findings(findings, total_commands=len(commands))
+    # Use the scored (severity-sorted) findings so the snippet order
+    # matches what the scorecard shows — worst first.
+    snippets = snippets_for(scorecard.findings)
+
+    if args.write is None:
+        # ``rich``'s console would re-wrap and colorize shell text; use
+        # a plain print so the output is copy-paste-ready.
+        print(render_stdout(snippets), end="")
+        return 0
+
+    try:
+        target = write_managed_block(args.write, snippets)
+    except ForbiddenTargetError as exc:
+        console.print(f"[red]error:[/red] {exc}")
+        return 2
+    except OSError as exc:
+        console.print(f"[red]error:[/red] could not write {args.write}: {exc}")
+        return 1
+
+    console.print(
+        f"[green]wrote[/green] {len(snippets)} snippet(s) to [cyan]{target}[/cyan]"
+    )
+    console.print(
+        f"[dim]source it in your shell: `source {target}`[/dim]"
+    )
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -159,6 +239,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
     if args.command == "score":
         return cmd_score(args, console)
+    if args.command == "fixes":
+        return cmd_fixes(args, console)
 
     parser.error(f"unknown command: {args.command}")
     return 2  # pragma: no cover
