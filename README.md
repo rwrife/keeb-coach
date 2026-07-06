@@ -35,7 +35,43 @@ Right now `keeb-coach score` ingests your bash or zsh history and reports:
 - A **Coach's take** section — one witty roast line per weak area
 - The **top N commands** by invocation count (`--top N`, default 10)
 
-The M5 `fixes` command — which turns these findings into a copy-paste alias file — is next.
+The M5 `fixes` command turns these findings into copy-paste alias snippets. See below.
+
+### What `fixes` does (M5)
+
+`keeb-coach fixes` prints copy-paste shell snippets — one per finding — that you can drop into your shell or a sourced alias file:
+
+```bash
+keeb-coach fixes
+# keeb-coach fixes — copy-paste these, or run `keeb-coach fixes --write PATH`.
+# Suggested target: ~/.keeb_aliases   (then add `source ~/.keeb_aliases` to your rc)
+
+# missing_alias: retyped `git status` (87×)
+alias git_status='git status'
+
+# slow_tool: `grep` → `rg`
+alias grep=rg
+
+# long_path: retyped `/home/ryan/projects/foo` — jump alias
+alias to_foo='cd /home/ryan/projects/foo'
+```
+
+Or, write straight into a dedicated file:
+
+```bash
+keeb-coach fixes --write ~/.keeb_aliases
+# wrote 3 snippet(s) to /home/ryan/.keeb_aliases
+# source it in your shell: `source /home/ryan/.keeb_aliases`
+```
+
+Then add `source ~/.keeb_aliases` to your shell rc file once, and re-run `keeb-coach fixes --write` whenever you want to refresh.
+
+**Guarantees:**
+
+- **Idempotent.** Re-running never duplicates entries — the managed block between `# >>> keeb-coach managed block >>>` and `# <<< keeb-coach managed block <<<` is replaced in place.
+- **Never touches your rc files.** `--write ~/.bashrc` / `~/.zshrc` / `~/.profile` is refused with a non-zero exit.
+- **Preserves surrounding content.** Anything you hand-edit outside the markers survives untouched.
+- **Atomic writes.** A crash mid-write cannot leave you with a corrupted alias file.
 
 Point `keeb-coach` at any history file with `$HISTFILE`:
 
@@ -75,7 +111,7 @@ Point at an explicit file with `keeb-coach score --config path/to/keeb.toml`.
 
 ## Status
 
-🚧 Early — see [`PLAN.md`](./PLAN.md) and the milestone issues. **M1 scaffold + M2 history ingestion + M3 first detectors & scoring + M4 remaining detectors, roasts, and config shipped.** Next up: M5 (`fixes` command — opt-in alias generation).
+🚧 Early — see [`PLAN.md`](./PLAN.md) and the milestone issues. **M1 scaffold + M2 history ingestion + M3 first detectors & scoring + M4 remaining detectors, roasts, and config + M5 `fixes` command with idempotent managed-block writes shipped.** Next up: M6 (polish + v0.1 release).
 
 ## License
 

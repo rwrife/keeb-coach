@@ -103,3 +103,87 @@ def test_score_command_with_custom_config(
     out = capsys.readouterr().out
     # With every threshold neutralized, no findings should surface.
     assert "Clean sheet" in out
+
+
+# ---------------------------------------------------------------------------
+# M5: `fixes` subcommand
+# ---------------------------------------------------------------------------
+
+
+def test_fixes_command_prints_snippets(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Same fixture as score — the bash history has `git status` × 5
+    # so we expect at least the missing_alias snippet to appear.
+    monkeypatch.setenv("SHELL", "/bin/bash")
+    monkeypatch.setenv("HISTFILE", str(FIXTURES / "bash_history.txt"))
+    rc = main(["fixes"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    # Header advertises --write so users discover it.
+    assert "--write" in out
+    # The missing_alias finding for `git status` becomes an alias line.
+    assert "alias git_status=" in out
+
+
+def test_fixes_command_no_history(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("SHELL", "/bin/bash")
+    monkeypatch.delenv("HISTFILE", raising=False)
+    rc = main(["fixes"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    # A missing history file is a soft failure — print a note, exit 0.
+    assert "nothing to fix" in out.lower() or "no history" in out.lower()
+
+
+def test_fixes_write_creates_managed_block(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("SHELL", "/bin/bash")
+    monkeypatch.setenv("HISTFILE", str(FIXTURES / "bash_history.txt"))
+    target = tmp_path / ".keeb_aliases"
+    rc = main(["fixes", "--write", str(target)])
+    assert rc == 0
+    text = target.read_text(encoding="utf-8")
+    assert "# >>> keeb-coach managed block >>>" in text
+    assert "# <<< keeb-coach managed block <<<" in text
+    assert "alias git_status=" in text
+
+
+def test_fixes_write_is_idempotent(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    # DoD from PLAN.md: running twice must not duplicate entries.
+    monkeypatch.setenv("SHELL", "/bin/bash")
+    monkeypatch.setenv("HISTFILE", str(FIXTURES / "bash_history.txt"))
+    target = tmp_path / ".keeb_aliases"
+    assert main(["fixes", "--write", str(target)]) == 0
+    assert main(["fixes", "--write", str(target)]) == 0
+    text = target.read_text(encoding="utf-8")
+    assert text.count("alias git_status=") == 1
+    assert text.count("# >>> keeb-coach managed block >>>") == 1
+
+
+def test_fixes_write_refuses_bashrc(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("SHELL", "/bin/bash")
+    monkeypatch.setenv("HISTFILE", str(FIXTURES / "bash_history.txt"))
+    rc_target = tmp_path / ".bashrc"
+    rc = main(["fixes", "--write", str(rc_target)])
+    assert rc == 2
+    out = capsys.readouterr().out
+    assert "refus" in out.lower()  # "refusing to write"
+    # And the file must not have been created.
+    assert not rc_target.exists()
