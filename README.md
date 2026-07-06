@@ -15,13 +15,65 @@ It's not `thefuck`. It never corrects you live. It watches your patterns over ti
 
 ## Quick start
 
+### Install with `pipx` (recommended)
+
+[`pipx`](https://pipx.pypa.io/) installs KeebCoach into an isolated venv and puts
+`keeb-coach` on your `PATH` — the ergonomic default for a personal CLI.
+
 ```bash
-pipx install keeb-coach   # (once published)
-keeb-coach score          # grade your last 30 days
-keeb-coach fixes          # get copy-paste aliases for your worst habits
+# One-time setup, if you don't already have pipx:
+python3 -m pip install --user pipx
+python3 -m pipx ensurepath   # then restart your shell
+
+# Install (from PyPI, once published):
+pipx install keeb-coach
+
+# ...or straight from GitHub in the meantime:
+pipx install "git+https://github.com/rwrife/keeb-coach@v0.1.0"
+
+# Upgrade later:
+pipx upgrade keeb-coach
 ```
 
-### What `score` shows today (M4)
+Prefer plain `pip`? `pip install --user keeb-coach` works too.
+
+### First run
+
+```bash
+keeb-coach score          # grade your last 30 days
+keeb-coach fixes          # get copy-paste aliases for your worst habits
+keeb-coach fixes --write ~/.keeb_aliases    # opt-in: persist them
+```
+
+### Demo
+
+> Live asciinema/GIF coming with the v0.1 announcement. Until then, here’s
+> the flavor of `keeb-coach score` on a real history:
+
+```text
+╭───────────────────────────────────────── keeb-coach ──────────────────────────────────────────╮
+│ Coach is warming up 🏋️                                              │
+│ Detected shell: zsh                                                 │
+│ History file:   /home/ryan/.zsh_history                             │
+│ Total commands: 1,204 (of 5,890 total, last 30d)                    │
+│ Date range:     2026-06-06 09:12 UTC  →  2026-07-06 22:41 UTC       │
+╰───────────────────────────────────────────────────────────────────────────────────╯
+
+╭───── Efficiency scorecard ─────╮
+│ B   82/100   (1,204 commands)     │
+╰────────────────────────────────────────────╯
+
+ Coach’s take
+ • missing_alias  You typed `git status` 87 times. You have hands. Alias it.
+ • slow_tool      `grep` → `rg`. Get with the program.
+ • long_path      That `/home/ryan/projects/big-monorepo/services/api` retype
+                    (12×) called; it wants `zoxide` or `cd -`.
+```
+
+Want to record your own? `asciinema rec demo.cast` → run `keeb-coach score`
+and `keeb-coach fixes` → upload with `asciinema upload demo.cast`.
+
+### What `score` shows today (v0.1)
 
 Right now `keeb-coach score` ingests your bash or zsh history and reports:
 
@@ -34,6 +86,38 @@ Right now `keeb-coach score` ingests your bash or zsh history and reports:
   - `sudo_redo` — the “forgot sudo, retyped the whole thing” classic
 - A **Coach's take** section — one witty roast line per weak area
 - The **top N commands** by invocation count (`--top N`, default 10)
+
+#### Windowing with `--days`
+
+By default `score` and `fixes` only look at commands **from the last 30 days**
+(matching “what did I actually do this month?”). Tune it:
+
+```bash
+keeb-coach score --days 7      # this week only
+keeb-coach score --days 90     # last quarter
+keeb-coach score --days 0      # no window — grade every command in history
+```
+
+Commands without a timestamp are always included; otherwise a stock bash
+setup without `HISTTIMEFORMAT` would silently score zero.
+
+#### Scripting with `--json`
+
+`keeb-coach score --json` emits a stable, machine-readable scorecard on
+stdout — no rich formatting, no roasts. Perfect for `jq`, dashboards, or
+a CI gate that fails your build when you slip below a B.
+
+```bash
+keeb-coach score --days 7 --json | jq '{grade, score, findings: (.findings|length)}'
+# { "grade": "B", "score": 84, "findings": 6 }
+
+# Fail if your grade drops below B this week:
+test "$(keeb-coach score --days 7 --json | jq -r .grade)" \
+  = "$(printf '%s\n' A B | tail -1)" || exit 1
+```
+
+The schema is versioned (`"schema": "keeb-coach.scorecard/v1"`) so future
+additions stay backward-compatible.
 
 The M5 `fixes` command turns these findings into copy-paste alias snippets. See below.
 
@@ -111,7 +195,14 @@ Point at an explicit file with `keeb-coach score --config path/to/keeb.toml`.
 
 ## Status
 
-🚧 Early — see [`PLAN.md`](./PLAN.md) and the milestone issues. **M1 scaffold + M2 history ingestion + M3 first detectors & scoring + M4 remaining detectors, roasts, and config + M5 `fixes` command with idempotent managed-block writes shipped.** Next up: M6 (polish + v0.1 release).
+🎉 **v0.1.0** — the full v0.1 scope from [`PLAN.md`](./PLAN.md) is shipped:
+M1 scaffold, M2 history ingestion, M3 first detectors + scoring, M4
+remaining detectors / roasts / config, M5 `fixes` with idempotent managed-
+block writes, and M6 polish (`--days`, `--json`, pipx docs, tagged release).
+
+Next up: the v0.2 backlog in [`PLAN.md`](./PLAN.md#8-backlog--future-features-v02)
+— `watch` mode, streaks, more shells, Atuin integration, and coach
+personas.
 
 ## License
 

@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from collections import Counter
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from rich.console import Console
@@ -26,7 +27,7 @@ from .fixes import (
 from .history.loader import find_history
 from .history.parser import Command, parse_file
 from .report import render_scorecard
-from .scoring import score_findings
+from .scoring import Scorecard, score_findings
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -46,7 +47,10 @@ def _build_parser() -> argparse.ArgumentParser:
         "--days",
         type=int,
         default=30,
-        help="How many days of history to grade (default: 30). [reserved for M4]",
+        help=(
+            "Only grade commands from the last N days (default: 30). "
+            "Commands without a timestamp are always included. Use 0 for no window."
+        ),
     )
     score.add_argument(
         "--top",
@@ -59,6 +63,14 @@ def _build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help="Path to a TOML config file (default: ~/.config/keeb-coach/config.toml).",
+    )
+    score.add_argument(
+        "--json",
+        action="store_true",
+        help=(
+            "Emit a machine-readable JSON scorecard to stdout instead of the "
+            "rich TUI report. Great for scripting or piping into `jq`."
+        ),
     )
 
     fixes = sub.add_parser(
@@ -87,7 +99,30 @@ def _build_parser() -> argparse.ArgumentParser:
             "never appended."
         ),
     )
+    fixes.add_argument(
+        "--days",
+        type=int,
+        default=30,
+        help=(
+            "Only consider commands from the last N days (default: 30, matches "
+            "`score`). Use 0 for no window."
+        ),
+    )
     return parser
+
+
+def _filter_by_days(cmds: Sequence[Command], days: int) -> list[Command]:
+    """Return only commands within the last ``days``.
+
+    Commands without a timestamp are always kept — the alternative is to
+    silently drop every zsh non-extended / bash-without-HISTTIMEFORMAT
+    entry, which would make `--days` a footgun on the most common setup.
+    ``days <= 0`` disables filtering entirely so scripts can opt out.
+    """
+    if days <= 0:
+        return list(cmds)
+    cutoff = datetime.now(tz=UTC) - timedelta(days=days)
+    return [c for c in cmds if c.ts is None or c.ts >= cutoff]
 
 
 def _date_range(cmds: Sequence[Command]) -> tuple[datetime | None, datetime | None]:
@@ -108,6 +143,53 @@ def _top_commands(cmds: Sequence[Command], n: int = 10) -> list[tuple[str, int]]
         if prog:
             counter[prog] += 1
     return counter.most_common(n)
+
+
+def _scorecard_to_json(
+    scorecard: Scorecard,
+    *,
+    shell: str,
+    history_path: Path,
+    days: int,
+    date_range: tuple[datetime | None, datetime | None],
+    top: list[tuple[str, int]],
+) -> dict[str, object]:
+    """Serialize a ``Scorecard`` into a stable JSON-friendly dict.
+
+    The schema is intentionally flat and typed so scripts (`jq`, CI
+    gates, dashboards) can consume it without knowing about ``rich`` or
+    Python enums. Any future field additions should be additive so we
+    don't break downstream tooling.
+    """
+    earliest, latest = date_range
+    return {
+        "schema": "keeb-coach.scorecard/v1",
+        "version": __version__,
+        "shell": shell,
+        "history_path": str(history_path),
+        "days": days,
+        "total_commands": scorecard.total_commands,
+        "date_range": {
+            "earliest": earliest.isoformat() if earliest else None,
+            "latest": latest.isoformat() if latest else None,
+        },
+        "score": scorecard.score,
+        "grade": scorecard.grade,
+        "findings": [
+            {
+                "detector": f.detector,
+                "severity": f.severity.name.lower(),
+                "severity_rank": int(f.severity),
+                "message": f.message,
+                "suggested_fix": f.suggested_fix,
+                "evidence": f.evidence,
+            }
+            for f in scorecard.findings
+        ],
+        "top_commands": [
+            {"command": prog, "count": count} for prog, count in top
+        ],
+    }
 
 
 def _run_detectors(
@@ -131,44 +213,83 @@ def _run_detectors(
 
 
 def cmd_score(args: argparse.Namespace, console: Console) -> int:
-    """M3: parse history, run detectors, print scorecard."""
+    """Parse history, run detectors, print scorecard (or JSON)."""
     src = find_history()
-    header_lines = [
-        "[bold]Coach is warming up 🏋️[/bold]",
-        "",
-        f"Detected shell: [cyan]{src.shell}[/cyan]",
-        f"History file:   [cyan]{src.path}[/cyan]",
-        f"Exists:         {'[green]yes[/green]' if src.exists else '[yellow]no[/yellow]'}",
-    ]
 
     if not src.exists:
-        header_lines.append("")
-        header_lines.append(
+        if args.json:
+            # A missing history file is still a valid, empty scorecard —
+            # emit valid JSON so scripts don't have to special-case it.
+            payload = {
+                "schema": "keeb-coach.scorecard/v1",
+                "version": __version__,
+                "shell": src.shell,
+                "history_path": str(src.path),
+                "days": args.days,
+                "total_commands": 0,
+                "date_range": {"earliest": None, "latest": None},
+                "score": 100,
+                "grade": "A",
+                "findings": [],
+                "top_commands": [],
+                "note": "history file not found",
+            }
+            print(json.dumps(payload, indent=2))
+            return 0
+        header_lines = [
+            "[bold]Coach is warming up 🏋️[/bold]",
+            "",
+            f"Detected shell: [cyan]{src.shell}[/cyan]",
+            f"History file:   [cyan]{src.path}[/cyan]",
+            "Exists:         [yellow]no[/yellow]",
+            "",
             "[dim]No history file yet — nothing to grade. "
-            "Run some commands first, coach.[/dim]"
-        )
+            "Run some commands first, coach.[/dim]",
+        ]
         console.print(
             Panel.fit("\n".join(header_lines), title="keeb-coach", border_style="magenta")
         )
         return 0
 
     config = load_config(args.config)
-    commands = parse_file(src.shell, src.path)
+    all_commands = parse_file(src.shell, src.path)
+    commands = _filter_by_days(all_commands, args.days)
     earliest, latest = _date_range(commands)
-    header_lines.extend(
-        [
-            "",
-            f"Total commands: [bold]{len(commands)}[/bold]",
-            f"Date range:     {_fmt_ts(earliest)}  →  {_fmt_ts(latest)}",
-        ]
-    )
-    console.print(Panel.fit("\n".join(header_lines), title="keeb-coach", border_style="magenta"))
-
     findings = _run_detectors(commands, config)
     scorecard = score_findings(findings, total_commands=len(commands))
+    top = _top_commands(commands, n=args.top)
+
+    if args.json:
+        payload = _scorecard_to_json(
+            scorecard,
+            shell=src.shell,
+            history_path=src.path,
+            days=args.days,
+            date_range=(earliest, latest),
+            top=top,
+        )
+        print(json.dumps(payload, indent=2))
+        return 0
+
+    header_lines = [
+        "[bold]Coach is warming up 🏋️[/bold]",
+        "",
+        f"Detected shell: [cyan]{src.shell}[/cyan]",
+        f"History file:   [cyan]{src.path}[/cyan]",
+        "Exists:         [green]yes[/green]",
+        "",
+        f"Total commands: [bold]{len(commands)}[/bold]"
+        + (
+            f" [dim](of {len(all_commands)} total, last {args.days}d)[/dim]"
+            if args.days > 0 and len(commands) != len(all_commands)
+            else ""
+        ),
+        f"Date range:     {_fmt_ts(earliest)}  →  {_fmt_ts(latest)}",
+    ]
+    console.print(Panel.fit("\n".join(header_lines), title="keeb-coach", border_style="magenta"))
+
     render_scorecard(scorecard, console)
 
-    top = _top_commands(commands, n=args.top)
     if top:
         table = Table(title=f"Top {len(top)} commands", header_style="bold magenta")
         table.add_column("#", justify="right", style="dim", no_wrap=True)
@@ -178,7 +299,7 @@ def cmd_score(args: argparse.Namespace, console: Console) -> int:
             table.add_row(str(i), prog, str(count))
         console.print(table)
 
-    console.print("[dim]M4: v0.1 detector set + roasts + config online.[/dim]")
+    console.print("[dim]v0.1: full detector set + roasts + config + fixes online.[/dim]")
     return 0
 
 
@@ -198,7 +319,8 @@ def cmd_fixes(args: argparse.Namespace, console: Console) -> int:
         return 0
 
     config = load_config(args.config)
-    commands = parse_file(src.shell, src.path)
+    all_commands = parse_file(src.shell, src.path)
+    commands = _filter_by_days(all_commands, args.days)
     findings = _run_detectors(commands, config)
     scorecard = score_findings(findings, total_commands=len(commands))
     # Use the scored (severity-sorted) findings so the snippet order
