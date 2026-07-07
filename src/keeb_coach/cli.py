@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sqlite3
 import sys
 from collections import Counter
 from collections.abc import Sequence
@@ -26,8 +27,17 @@ from .fixes import (
 )
 from .history.loader import find_history
 from .history.parser import Command, parse_file
-from .report import render_scorecard
+from .report import render_scorecard, render_trend
 from .scoring import Scorecard, score_findings
+from .storage import (
+    RunRecord,
+    TrendDelta,
+    default_db_path,
+    format_delta_headline,
+    recent_runs,
+    record_run,
+    trend_delta,
+)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -71,6 +81,74 @@ def _build_parser() -> argparse.ArgumentParser:
             "Emit a machine-readable JSON scorecard to stdout instead of the "
             "rich TUI report. Great for scripting or piping into `jq`."
         ),
+    )
+    score.add_argument(
+        "--db",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help=(
+            "Override the SQLite streak DB path (default: "
+            "$XDG_DATA_HOME/keeb-coach/history.db or "
+            "~/.local/share/keeb-coach/history.db)."
+        ),
+    )
+    score.add_argument(
+        "--no-record",
+        action="store_true",
+        help=(
+            "Don't persist this run to the streak DB. Use for one-off "
+            "experiments or when you're grading somebody else's history."
+        ),
+    )
+    score.add_argument(
+        "--window",
+        type=int,
+        default=7,
+        metavar="DAYS",
+        help=(
+            "Comparison window for the trend headline (default: 7). Coach "
+            "compares the newest run to the most recent run older than "
+            "this many days."
+        ),
+    )
+
+    trend = sub.add_parser(
+        "trend",
+        help="Show your scorecard history over time.",
+        description=(
+            "Print the most recent recorded scorecards (from the SQLite "
+            "streak DB) along with a small sparkline and a per-detector "
+            "finding-count trend."
+        ),
+    )
+    trend.add_argument(
+        "--limit",
+        type=int,
+        default=14,
+        help="How many recent runs to display (default: 14, max 100).",
+    )
+    trend.add_argument(
+        "--db",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help="Override the SQLite streak DB path.",
+    )
+    trend.add_argument(
+        "--window",
+        type=int,
+        default=7,
+        metavar="DAYS",
+        help=(
+            "Comparison window for the trend headline (default: 7). Same "
+            "semantics as `score --window`."
+        ),
+    )
+    trend.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit a machine-readable JSON trend to stdout.",
     )
 
     fixes = sub.add_parser(
@@ -145,6 +223,46 @@ def _top_commands(cmds: Sequence[Command], n: int = 10) -> list[tuple[str, int]]
     return counter.most_common(n)
 
 
+def _delta_to_json(delta: TrendDelta | None) -> dict[str, object] | None:
+    """Serialize a :class:`TrendDelta` for JSON output.
+
+    Kept separate from :func:`_scorecard_to_json` so both ``score`` and
+    ``trend`` share one wire format for the delta block.
+    """
+    if delta is None:
+        return None
+    return {
+        "window_days": delta.window_days,
+        "score_delta": delta.score_delta,
+        "findings_delta": dict(delta.findings_delta),
+        "headline": format_delta_headline(delta),
+        "reference": (
+            {
+                "id": delta.reference_run.id,
+                "ts": delta.reference_run.ts.isoformat(),
+                "score": delta.reference_run.score,
+                "grade": delta.reference_run.grade,
+            }
+            if delta.reference_run
+            else None
+        ),
+    }
+
+
+def _run_to_json(run: RunRecord) -> dict[str, object]:
+    return {
+        "id": run.id,
+        "ts": run.ts.isoformat(),
+        "shell": run.shell,
+        "history_path": run.history_path,
+        "days": run.days,
+        "total_commands": run.total_commands,
+        "score": run.score,
+        "grade": run.grade,
+        "findings": dict(run.findings),
+    }
+
+
 def _scorecard_to_json(
     scorecard: Scorecard,
     *,
@@ -153,6 +271,7 @@ def _scorecard_to_json(
     days: int,
     date_range: tuple[datetime | None, datetime | None],
     top: list[tuple[str, int]],
+    delta: TrendDelta | None = None,
 ) -> dict[str, object]:
     """Serialize a ``Scorecard`` into a stable JSON-friendly dict.
 
@@ -162,7 +281,7 @@ def _scorecard_to_json(
     don't break downstream tooling.
     """
     earliest, latest = date_range
-    return {
+    payload: dict[str, object] = {
         "schema": "keeb-coach.scorecard/v1",
         "version": __version__,
         "shell": shell,
@@ -190,6 +309,10 @@ def _scorecard_to_json(
             {"command": prog, "count": count} for prog, count in top
         ],
     }
+    delta_payload = _delta_to_json(delta)
+    if delta_payload is not None:
+        payload["trend"] = delta_payload
+    return payload
 
 
 def _run_detectors(
@@ -259,6 +382,29 @@ def cmd_score(args: argparse.Namespace, console: Console) -> int:
     scorecard = score_findings(findings, total_commands=len(commands))
     top = _top_commands(commands, n=args.top)
 
+    # Record the run *before* computing the delta so today's row is in
+    # the DB (but ``trend_delta`` deliberately compares against an
+    # *older* reference run, so it still shows week-over-week movement).
+    record_error: str | None = None
+    if not args.no_record:
+        try:
+            record_run(
+                scorecard,
+                shell=src.shell,
+                history_path=src.path,
+                days=args.days,
+                db_path=args.db,
+            )
+        except (OSError, sqlite3.DatabaseError) as exc:  # pragma: no cover
+            # Never fail the scorecard because the streak DB was cranky.
+            record_error = str(exc)
+
+    delta: TrendDelta | None = None
+    try:
+        delta = trend_delta(window_days=args.window, db_path=args.db)
+    except sqlite3.DatabaseError:  # pragma: no cover
+        delta = None
+
     if args.json:
         payload = _scorecard_to_json(
             scorecard,
@@ -267,7 +413,10 @@ def cmd_score(args: argparse.Namespace, console: Console) -> int:
             days=args.days,
             date_range=(earliest, latest),
             top=top,
+            delta=delta,
         )
+        if record_error is not None:  # pragma: no cover
+            payload["record_error"] = record_error
         print(json.dumps(payload, indent=2))
         return 0
 
@@ -290,6 +439,11 @@ def cmd_score(args: argparse.Namespace, console: Console) -> int:
 
     render_scorecard(scorecard, console)
 
+    headline = format_delta_headline(delta)
+    if headline:
+        console.print()
+        console.print(f"[bold magenta]Trend:[/bold magenta] {headline}")
+
     if top:
         table = Table(title=f"Top {len(top)} commands", header_style="bold magenta")
         table.add_column("#", justify="right", style="dim", no_wrap=True)
@@ -300,6 +454,42 @@ def cmd_score(args: argparse.Namespace, console: Console) -> int:
         console.print(table)
 
     console.print("[dim]v0.1: full detector set + roasts + config + fixes online.[/dim]")
+    return 0
+
+
+def cmd_trend(args: argparse.Namespace, console: Console) -> int:
+    """Show the recent-runs table + sparkline + delta headline.
+
+    Reads from the same SQLite DB that ``score`` writes to. If there's
+    no DB yet, prints a gentle nudge instead of crashing — first-run
+    UX matters.
+    """
+    limit = max(1, min(int(args.limit), 100))
+    db = args.db if args.db is not None else default_db_path()
+    runs = recent_runs(limit=limit, db_path=args.db)
+    delta = trend_delta(window_days=args.window, db_path=args.db)
+
+    if args.json:
+        payload: dict[str, object] = {
+            "schema": "keeb-coach.trend/v1",
+            "version": __version__,
+            "db_path": str(db),
+            "window_days": args.window,
+            "runs": [_run_to_json(r) for r in runs],
+            "trend": _delta_to_json(delta),
+        }
+        print(json.dumps(payload, indent=2))
+        return 0
+
+    if not runs:
+        console.print(
+            "[yellow]No streak history yet.[/yellow] "
+            "[dim]Run `keeb-coach score` a couple of times to build one.[/dim]"
+        )
+        console.print(f"[dim]DB path: {db}[/dim]")
+        return 0
+
+    render_trend(runs, delta, console, db_path=db)
     return 0
 
 
@@ -363,6 +553,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return cmd_score(args, console)
     if args.command == "fixes":
         return cmd_fixes(args, console)
+    if args.command == "trend":
+        return cmd_trend(args, console)
 
     parser.error(f"unknown command: {args.command}")
     return 2  # pragma: no cover
