@@ -13,6 +13,12 @@ It's not `thefuck`. It never corrects you live. It watches your patterns over ti
 - **Slow tools** — `grep`→`rg`, `find`→`fd`, `cat`→`bat`, `ls -la`→`eza`.
 - **Sudo-redos** — the "forgot sudo, retyped the whole thing" classic.
 
+## What it tracks over time
+
+- **Streak DB** — every `score` run appends to a local SQLite database.
+- **`keeb-coach trend`** — sparkline + per-detector trend + week-over-week delta.
+- **One-line headlines** on `score` ("You cut retyped paths 60% this week 💪").
+
 ## Quick start
 
 ### Install with `pipx` (recommended)
@@ -43,6 +49,7 @@ Prefer plain `pip`? `pip install --user keeb-coach` works too.
 keeb-coach score          # grade your last 30 days
 keeb-coach fixes          # get copy-paste aliases for your worst habits
 keeb-coach fixes --write ~/.keeb_aliases    # opt-in: persist them
+keeb-coach trend          # see how your grade is moving over time
 ```
 
 ### Demo
@@ -163,6 +170,41 @@ Point `keeb-coach` at any history file with `$HISTFILE`:
 HISTFILE=~/.zsh_history keeb-coach score
 ```
 
+### Streaks & progress (`trend`)
+
+Every `keeb-coach score` writes a row into a local SQLite streak DB at
+`$XDG_DATA_HOME/keeb-coach/history.db` (defaults to
+`~/.local/share/keeb-coach/history.db`). `keeb-coach trend` reads it
+back so you can watch your grade move over time.
+
+```bash
+keeb-coach trend            # last 14 recorded runs, sparkline + delta
+keeb-coach trend --limit 30 # go back further (max 100)
+keeb-coach trend --json     # machine-readable, schema v1
+```
+
+`score` also prints a one-line trend headline right under the scorecard
+when there's a comparable prior run:
+
+```text
+Trend: You cut long path findings 60% this week 💪 (5 → 2)
+```
+
+The reference run is the most recent one **older than** `--window`
+(default 7 days), so "this week vs. last week" still works even when
+you only run KeebCoach every few days.
+
+Opt-outs and overrides:
+
+```bash
+keeb-coach score --no-record        # grade but don't append to the DB
+keeb-coach score --db /tmp/kc.db    # steer both score + trend elsewhere
+keeb-coach score --window 14        # compare vs. two weeks ago instead
+```
+
+Everything is local: no network, no sync, no daemon. Delete the DB
+file and your streak history is gone — no other side effects.
+
 ### Configuration
 
 All thresholds are tunable via `~/.config/keeb-coach/config.toml` (or
@@ -200,9 +242,12 @@ M1 scaffold, M2 history ingestion, M3 first detectors + scoring, M4
 remaining detectors / roasts / config, M5 `fixes` with idempotent managed-
 block writes, and M6 polish (`--days`, `--json`, pipx docs, tagged release).
 
-Next up: the v0.2 backlog in [`PLAN.md`](./PLAN.md#8-backlog--future-features-v02)
-— `watch` mode, streaks, more shells, Atuin integration, and coach
-personas.
+On deck: **v0.2 streaks** — `keeb-coach trend` reads a local SQLite
+store of every recorded scorecard so you can watch your grade move
+over time.
+
+Next up: the rest of the v0.2 backlog in [`PLAN.md`](./PLAN.md#8-backlog--future-features-v02)
+— `watch` mode, more shells, Atuin integration, and coach personas.
 
 ## License
 

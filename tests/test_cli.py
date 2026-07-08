@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import json
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
 from keeb_coach import __version__
 from keeb_coach.cli import main
+from keeb_coach.detectors.base import Finding, Severity
+from keeb_coach.scoring import score_findings
+from keeb_coach.storage import recent_runs, record_run
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -288,3 +293,152 @@ def test_fixes_days_filter_narrows_window(
     assert rc == 0
     text = target.read_text(encoding="utf-8")
     assert "alias git_status=" not in text
+
+
+# ---------------------------------------------------------------------------
+# Streak DB integration + `trend` command
+# ---------------------------------------------------------------------------
+
+
+def _seed_bash_run(
+    monkeypatch: pytest.MonkeyPatch,
+    db: Path,
+) -> None:
+    """Point HISTFILE at the bash fixture; caller runs `score`."""
+    monkeypatch.setenv("SHELL", "/bin/bash")
+    monkeypatch.setenv("HISTFILE", str(FIXTURES / "bash_history.txt"))
+    # We rely on the caller passing --db to steer the write.
+
+
+def test_score_records_run_to_db_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """`score` should write a row into the SQLite streak DB."""
+    db = tmp_path / "streak.db"
+    _seed_bash_run(monkeypatch, db)
+    rc = main(["score", "--days", "0", "--db", str(db)])
+    assert rc == 0
+    runs = recent_runs(limit=5, db_path=db)
+    assert len(runs) == 1
+    assert runs[0].shell == "bash"
+    # bash fixture has `git status` × 5 → alias detector fires.
+    assert runs[0].findings.get("missing_alias", 0) >= 1
+
+
+def test_score_no_record_skips_db_write(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """`--no-record` must not touch the streak DB."""
+    db = tmp_path / "streak.db"
+    _seed_bash_run(monkeypatch, db)
+    rc = main(
+        ["score", "--days", "0", "--db", str(db), "--no-record"]
+    )
+    assert rc == 0
+    # DB should not exist at all — no lazy dir creation either.
+    assert not db.exists()
+    assert recent_runs(db_path=db) == []
+
+
+def test_score_json_includes_trend_when_second_run(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A prior recorded run should show up under `trend` in JSON."""
+
+    db = tmp_path / "streak.db"
+    # Seed a prior run *older than the window* so trend_delta binds.
+    prior = score_findings(
+        [Finding("missing_alias", Severity.MEDIUM, "seed")] * 5,
+        total_commands=200,
+    )
+    record_run(
+        prior,
+        shell="bash",
+        history_path="/tmp/seed",
+        days=30,
+        db_path=db,
+        ts=datetime.now(tz=UTC) - timedelta(days=14),
+    )
+
+    _seed_bash_run(monkeypatch, db)
+    rc = main(
+        ["score", "--json", "--days", "0", "--db", str(db), "--window", "7"]
+    )
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert "trend" in payload
+    trend = payload["trend"]
+    assert trend["window_days"] == 7
+    assert trend["reference"] is not None
+    # We had 5 alias findings before, at most 1 now → biggest cut wins.
+    assert isinstance(trend["findings_delta"], dict)
+    assert trend["headline"]
+
+
+def test_trend_command_empty_when_no_db(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    rc = main(["trend", "--db", str(tmp_path / "nope.db")])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "No streak history yet" in out
+
+
+def test_trend_command_shows_recent_runs(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+
+    db = tmp_path / "streak.db"
+    now = datetime.now(tz=UTC)
+    for offset in (10, 3, 0):
+        sc = score_findings(
+            [Finding("long_path", Severity.LOW, "seed")] * offset,
+            total_commands=100,
+        )
+        record_run(
+            sc,
+            shell="zsh",
+            history_path="/tmp/x",
+            days=30,
+            db_path=db,
+            ts=now - timedelta(days=offset),
+        )
+
+    rc = main(["trend", "--db", str(db), "--window", "7"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "keeb-coach trend" in out
+    assert "3 recorded run(s)" in out
+    # Table should list the detector column.
+    assert "long_path" in out
+    # Sparkline + a delta panel comparing to the run outside the window.
+    assert "vs. 7d ago" in out
+
+
+def test_trend_command_json(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+
+    db = tmp_path / "streak.db"
+    record_run(
+        score_findings([], total_commands=42),
+        shell="bash",
+        history_path="/tmp/x",
+        days=30,
+        db_path=db,
+    )
+    rc = main(["trend", "--db", str(db), "--json"])
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["schema"] == "keeb-coach.trend/v1"
+    assert isinstance(payload["runs"], list) and len(payload["runs"]) == 1
+    assert payload["runs"][0]["shell"] == "bash"
+    assert payload["runs"][0]["total_commands"] == 42
