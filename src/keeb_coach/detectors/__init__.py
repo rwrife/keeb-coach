@@ -9,6 +9,7 @@ detector by dropping a file next to this one, exporting a subclass of
 from __future__ import annotations
 
 from .base import Detector, Finding, Severity
+from .failed_retype import FailedRetypeDetector
 from .long_path import LongPathDetector
 from .missing_alias import MissingAliasDetector
 from .slow_tool import SlowToolDetector
@@ -20,11 +21,13 @@ ALL_DETECTORS: tuple[Detector, ...] = (
     SlowToolDetector(),
     LongPathDetector(),
     SudoRedoDetector(),
+    FailedRetypeDetector(),
 )
 
 __all__ = [
     "ALL_DETECTORS",
     "Detector",
+    "FailedRetypeDetector",
     "Finding",
     "LongPathDetector",
     "MissingAliasDetector",

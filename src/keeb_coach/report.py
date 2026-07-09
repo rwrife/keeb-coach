@@ -75,6 +75,11 @@ _ROASTS: dict[str, dict[Severity, str]] = {
         Severity.MEDIUM: "You have retyped an entire command as root. Please stop.",
         Severity.HIGH: "`sudo !!` — memorize it, tattoo it, live it.",
     },
+    "failed_retype": {
+        Severity.LOW: "Every failure is a lesson. You are taking a lot of lessons.",
+        Severity.MEDIUM: "Fail, retry, fail, retry. This is not a workflow.",
+        Severity.HIGH: "Your shell has a `!!` and a `fc`. Please introduce them.",
+    },
 }
 
 

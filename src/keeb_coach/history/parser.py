@@ -29,16 +29,35 @@ _BASH_TS_RE = re.compile(r"^#(?P<ts>\d{9,})\s*$")
 
 @dataclass(frozen=True)
 class Command:
-    """One normalized command from a history file."""
+    """One normalized command from a history file.
+
+    The four "rich" fields (``exit_code``, ``cwd``, ``duration_ms``,
+    ``session``) are populated only by richer history sources such as
+    :mod:`keeb_coach.history.atuin`. Plain bash/zsh history files never
+    set them, so downstream code must treat them as optional.
+    """
 
     raw: str
     argv: tuple[str, ...] = field(default_factory=tuple)
     ts: datetime | None = None
+    exit_code: int | None = None
+    cwd: str | None = None
+    duration_ms: int | None = None
+    session: str | None = None
 
     @property
     def program(self) -> str | None:
         """First argv token, if any — the invoked program/builtin."""
         return self.argv[0] if self.argv else None
+
+    @property
+    def failed(self) -> bool:
+        """True when we have an exit code and it's non-zero.
+
+        Commands without exit-code info (bash/zsh history) return
+        ``False`` — we never *invent* failure.
+        """
+        return self.exit_code is not None and self.exit_code != 0
 
 
 def _safe_split(raw: str) -> tuple[str, ...]:
