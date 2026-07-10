@@ -71,6 +71,11 @@ def default_config() -> dict[str, Any]:
             "sudo_redo": {
                 "min_count": 2,
             },
+            "failed_retype": {
+                "min_count": 3,
+                "lookahead": 3,
+                "min_similarity": 0.75,
+            },
         },
     }
 

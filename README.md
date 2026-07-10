@@ -12,6 +12,20 @@ It's not `thefuck`. It never corrects you live. It watches your patterns over ti
 - **Long-path retypes** — deep `cd` targets you keep typing instead of `cd -` / `zoxide`.
 - **Slow tools** — `grep`→`rg`, `find`→`fd`, `cat`→`bat`, `ls -la`→`eza`.
 - **Sudo-redos** — the "forgot sudo, retyped the whole thing" classic.
+- **Failed retypes** *(atuin only)* — commands that fail and get retyped nearly verbatim (typos, missing sudo, wrong path). Needs exit-code data, which plain bash/zsh history doesn't record.
+
+## Optional: atuin integration
+
+If you use [atuin](https://atuin.sh) (a shell-history replacement that records exit code, cwd, and duration per command), KeebCoach reads its SQLite DB automatically and unlocks the exit-code-aware detectors above.
+
+```bash
+keeb-coach score              # auto: uses atuin if ~/.local/share/atuin/history.db exists
+keeb-coach score --atuin      # force atuin (falls back to plain history if DB missing)
+keeb-coach score --no-atuin   # force plain shell history
+keeb-coach score --atuin-db /custom/path/history.db
+```
+
+Read-only, local-first, zero extra dependencies — same rules as the rest of the tool.
 
 ## What it tracks over time
 

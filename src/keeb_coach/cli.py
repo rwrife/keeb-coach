@@ -8,6 +8,7 @@ import sqlite3
 import sys
 from collections import Counter
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -25,6 +26,7 @@ from .fixes import (
     snippets_for,
     write_managed_block,
 )
+from .history.atuin import find_atuin, load_atuin
 from .history.loader import find_history
 from .history.parser import Command, parse_file
 from .report import render_scorecard, render_trend
@@ -112,6 +114,30 @@ def _build_parser() -> argparse.ArgumentParser:
             "this many days."
         ),
     )
+    score.add_argument(
+        "--atuin",
+        dest="atuin",
+        action="store_true",
+        default=None,
+        help=(
+            "Read history from atuin's SQLite DB instead of the shell's "
+            "plain history file. Unlocks exit-code aware detectors like "
+            "failed_retype. Default: auto (uses atuin if its DB exists)."
+        ),
+    )
+    score.add_argument(
+        "--no-atuin",
+        dest="atuin",
+        action="store_false",
+        help="Force the plain shell history source even if atuin is installed.",
+    )
+    score.add_argument(
+        "--atuin-db",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help="Override the atuin DB path (default: ~/.local/share/atuin/history.db).",
+    )
 
     trend = sub.add_parser(
         "trend",
@@ -185,6 +211,26 @@ def _build_parser() -> argparse.ArgumentParser:
             "Only consider commands from the last N days (default: 30, matches "
             "`score`). Use 0 for no window."
         ),
+    )
+    fixes.add_argument(
+        "--atuin",
+        dest="atuin",
+        action="store_true",
+        default=None,
+        help="Read history from atuin's SQLite DB (default: auto).",
+    )
+    fixes.add_argument(
+        "--no-atuin",
+        dest="atuin",
+        action="store_false",
+        help="Force the plain shell history source.",
+    )
+    fixes.add_argument(
+        "--atuin-db",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help="Override the atuin DB path.",
     )
     return parser
 
@@ -315,6 +361,48 @@ def _scorecard_to_json(
     return payload
 
 
+@dataclass(frozen=True)
+class _HistoryLoad:
+    """Result of :func:`_load_history` — a resolved history source."""
+
+    commands: list[Command]
+    shell: str
+    path: Path
+    exists: bool
+
+
+def _load_history(
+    *,
+    prefer_atuin: bool | None,
+    atuin_db: Path | None,
+) -> _HistoryLoad:
+    """Pick a history source and return its parsed commands.
+
+    ``prefer_atuin`` semantics:
+
+    - ``True``   — user passed ``--atuin``; use atuin if the DB exists,
+      otherwise fall back to plain shell (and note it in the header).
+    - ``False``  — user passed ``--no-atuin``; always use plain shell.
+    - ``None``   — auto: use atuin if its DB exists, otherwise plain shell.
+    """
+    atuin_src = find_atuin(atuin_db)
+    use_atuin = prefer_atuin if prefer_atuin is not None else atuin_src.exists
+    if use_atuin and atuin_src.exists:
+        return _HistoryLoad(
+            commands=load_atuin(atuin_db),
+            shell="atuin",
+            path=atuin_src.path,
+            exists=True,
+        )
+    plain = find_history()
+    return _HistoryLoad(
+        commands=parse_file(plain.shell, plain.path) if plain.exists else [],
+        shell=plain.shell,
+        path=plain.path,
+        exists=plain.exists,
+    )
+
+
 def _run_detectors(
     commands: Sequence[Command],
     config: dict[str, object] | None = None,
@@ -337,7 +425,17 @@ def _run_detectors(
 
 def cmd_score(args: argparse.Namespace, console: Console) -> int:
     """Parse history, run detectors, print scorecard (or JSON)."""
-    src = find_history()
+    _hist = _load_history(
+        prefer_atuin=getattr(args, "atuin", None),
+        atuin_db=getattr(args, "atuin_db", None),
+    )
+
+    class _Src:  # tiny shim so downstream reads stay readable.
+        shell = _hist.shell
+        path = _hist.path
+        exists = _hist.exists
+
+    src = _Src()
 
     if not src.exists:
         if args.json:
@@ -375,7 +473,7 @@ def cmd_score(args: argparse.Namespace, console: Console) -> int:
         return 0
 
     config = load_config(args.config)
-    all_commands = parse_file(src.shell, src.path)
+    all_commands = _hist.commands
     commands = _filter_by_days(all_commands, args.days)
     earliest, latest = _date_range(commands)
     findings = _run_detectors(commands, config)
@@ -500,7 +598,17 @@ def cmd_fixes(args: argparse.Namespace, console: Console) -> int:
     here, we just render them. That means ``fixes`` and ``score``
     always agree about what needs fixing.
     """
-    src = find_history()
+    _hist = _load_history(
+        prefer_atuin=getattr(args, "atuin", None),
+        atuin_db=getattr(args, "atuin_db", None),
+    )
+
+    class _Src:
+        shell = _hist.shell
+        path = _hist.path
+        exists = _hist.exists
+
+    src = _Src()
     if not src.exists:
         console.print(
             "[yellow]No history file yet — nothing to fix.[/yellow] "
@@ -509,7 +617,7 @@ def cmd_fixes(args: argparse.Namespace, console: Console) -> int:
         return 0
 
     config = load_config(args.config)
-    all_commands = parse_file(src.shell, src.path)
+    all_commands = _hist.commands
     commands = _filter_by_days(all_commands, args.days)
     findings = _run_detectors(commands, config)
     scorecard = score_findings(findings, total_commands=len(commands))

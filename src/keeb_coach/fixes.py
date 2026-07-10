@@ -190,6 +190,22 @@ def _snippet_sudo_redo(finding: Finding) -> FixSnippet | None:
     )
 
 
+def _snippet_failed_retype(finding: Finding) -> FixSnippet | None:
+    """Nudge toward `fc`/`!!` instead of retyping failed commands."""
+    count = finding.evidence.get("count")
+    count_str = f" ({count}×)" if isinstance(count, int) else ""
+    return FixSnippet(
+        detector=finding.detector,
+        comment=f"failed_retype: failure-then-retype pairs{count_str}",
+        lines=(
+            "# shortcuts you already have:",
+            "#   !!   rerun previous command (great after `sudo`)",
+            "#   fc   pop the previous command into $EDITOR for a real fix",
+        ),
+        key="failed_retype::reminder",
+    )
+
+
 # Registry: detector id → builder. Keeping it a plain dict means adding
 # a new detector's fix handler is a one-line change.
 _BUILDERS = {
@@ -197,6 +213,7 @@ _BUILDERS = {
     "slow_tool": _snippet_slow_tool,
     "long_path": _snippet_long_path,
     "sudo_redo": _snippet_sudo_redo,
+    "failed_retype": _snippet_failed_retype,
 }
 
 
