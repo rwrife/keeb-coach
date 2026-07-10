@@ -52,6 +52,14 @@ def default_config() -> dict[str, Any]:
     ``keeb-coach --print-config`` (future) and see the exact knobs.
     """
     return {
+        "coach": {
+            # ``persona`` selects the roast voice used by the scorecard.
+            # ``None`` means "use the built-in default persona" (i.e.
+            # the pre-personas M4 copy). ``persona_dir`` is an optional
+            # user-supplied directory of extra ``<id>.toml`` files.
+            "persona": None,
+            "persona_dir": None,
+        },
         "detectors": {
             "missing_alias": {
                 "min_count": 4,

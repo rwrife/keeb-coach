@@ -29,6 +29,15 @@ from .fixes import (
 from .history.atuin import find_atuin, load_atuin
 from .history.loader import find_history
 from .history.parser import Command, parse_file
+from .personas import (
+    Persona,
+    PersonaError,
+    iter_persona_files,
+    load_all_builtins,
+    persona_dir_from_config,
+    persona_from_config,
+    resolve_persona,
+)
 from .report import render_scorecard, render_trend
 from .scoring import Scorecard, score_findings
 from .storage import (
@@ -137,6 +146,34 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="PATH",
         help="Override the atuin DB path (default: ~/.local/share/atuin/history.db).",
+    )
+    score.add_argument(
+        "--persona",
+        type=str,
+        default=None,
+        metavar="NAME|PATH",
+        help=(
+            "Coach persona for the scorecard's roast lines. Accepts a "
+            "built-in id (drill_sergeant, zen_master, "
+            "passive_aggressive_pm, default), a path to a persona TOML "
+            "file, or an id from `[coach] persona_dir`. Overrides the "
+            "config default. Run `keeb-coach personas` to list."
+        ),
+    )
+
+    personas_cmd = sub.add_parser(
+        "personas",
+        help="List available coach personas.",
+        description=(
+            "Print every built-in persona plus any TOML personas found "
+            "in `[coach] persona_dir`."
+        ),
+    )
+    personas_cmd.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="Path to a TOML config file (default: ~/.config/keeb-coach/config.toml).",
     )
 
     trend = sub.add_parser(
@@ -309,6 +346,25 @@ def _run_to_json(run: RunRecord) -> dict[str, object]:
     }
 
 
+def _resolve_active_persona(
+    cli_value: str | None,
+    config: dict[str, object] | None,
+    console: Console,
+) -> Persona:
+    """Resolve the active persona from CLI + config, with a friendly fallback.
+
+    CLI wins over config. A bad name prints a warning and falls back
+    to the default persona so a typo never breaks the scorecard.
+    """
+    name = cli_value if cli_value else persona_from_config(config)
+    extra_dir = persona_dir_from_config(config)
+    try:
+        return resolve_persona(name, extra_dir=extra_dir)
+    except PersonaError as exc:
+        console.print(f"[yellow]persona:[/yellow] {exc} [dim](falling back to default)[/dim]")
+        return resolve_persona(None)
+
+
 def _scorecard_to_json(
     scorecard: Scorecard,
     *,
@@ -318,6 +374,7 @@ def _scorecard_to_json(
     date_range: tuple[datetime | None, datetime | None],
     top: list[tuple[str, int]],
     delta: TrendDelta | None = None,
+    persona: Persona | None = None,
 ) -> dict[str, object]:
     """Serialize a ``Scorecard`` into a stable JSON-friendly dict.
 
@@ -358,6 +415,8 @@ def _scorecard_to_json(
     delta_payload = _delta_to_json(delta)
     if delta_payload is not None:
         payload["trend"] = delta_payload
+    if persona is not None:
+        payload["persona"] = {"id": persona.id, "name": persona.name}
     return payload
 
 
@@ -473,6 +532,7 @@ def cmd_score(args: argparse.Namespace, console: Console) -> int:
         return 0
 
     config = load_config(args.config)
+    persona = _resolve_active_persona(getattr(args, "persona", None), config, console)
     all_commands = _hist.commands
     commands = _filter_by_days(all_commands, args.days)
     earliest, latest = _date_range(commands)
@@ -512,6 +572,7 @@ def cmd_score(args: argparse.Namespace, console: Console) -> int:
             date_range=(earliest, latest),
             top=top,
             delta=delta,
+            persona=persona,
         )
         if record_error is not None:  # pragma: no cover
             payload["record_error"] = record_error
@@ -535,7 +596,7 @@ def cmd_score(args: argparse.Namespace, console: Console) -> int:
     ]
     console.print(Panel.fit("\n".join(header_lines), title="keeb-coach", border_style="magenta"))
 
-    render_scorecard(scorecard, console)
+    render_scorecard(scorecard, console, persona=persona)
 
     headline = format_delta_headline(delta)
     if headline:
@@ -649,6 +710,45 @@ def cmd_fixes(args: argparse.Namespace, console: Console) -> int:
     return 0
 
 
+def cmd_personas(args: argparse.Namespace, console: Console) -> int:
+    """List every persona the CLI can resolve."""
+    config = load_config(args.config)
+    configured = persona_from_config(config)
+    extra_dir = persona_dir_from_config(config)
+
+    table = Table(title="coach personas", header_style="bold magenta")
+    table.add_column("id", style="cyan", no_wrap=True)
+    table.add_column("name")
+    table.add_column("source", style="dim", no_wrap=True)
+    table.add_column("description")
+
+    default_marker = configured or "default"
+    for persona in load_all_builtins():
+        pid = persona.id
+        marker = " (default)" if pid == default_marker else ""
+        table.add_row(pid + marker, persona.name, "builtin", persona.description)
+
+    if extra_dir is not None:
+        for pid, path in iter_persona_files(extra_dir):
+            try:
+                persona = resolve_persona(pid, extra_dir=extra_dir)
+            except PersonaError as exc:
+                table.add_row(pid, "[red]invalid[/red]", str(path), str(exc))
+                continue
+            marker = " (default)" if pid == default_marker else ""
+            table.add_row(persona.id + marker, persona.name, str(path), persona.description)
+
+    console.print(table)
+    if configured:
+        console.print(f"[dim]configured default: {configured}[/dim]")
+    else:
+        console.print(
+            "[dim]tip: set `[coach] persona = \"drill_sergeant\"` in "
+            "~/.config/keeb-coach/config.toml to change the default.[/dim]"
+        )
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -663,6 +763,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return cmd_fixes(args, console)
     if args.command == "trend":
         return cmd_trend(args, console)
+    if args.command == "personas":
+        return cmd_personas(args, console)
 
     parser.error(f"unknown command: {args.command}")
     return 2  # pragma: no cover

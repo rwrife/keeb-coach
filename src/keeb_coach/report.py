@@ -20,6 +20,7 @@ from rich.table import Table
 from rich.text import Text
 
 from .detectors.base import Finding, Severity
+from .personas import Persona, default_persona
 from .scoring import Scorecard
 from .storage import (
     RunRecord,
@@ -51,38 +52,6 @@ _SEVERITY_LABEL: dict[Severity, str] = {
     Severity.HIGH: "high",
 }
 
-# Per-detector roast copy — indexed by severity so a HIGH finding gets a
-# rougher line than a LOW one. Deterministic on purpose: the report
-# looks the same across runs unless the underlying findings changed.
-_ROASTS: dict[str, dict[Severity, str]] = {
-    "missing_alias": {
-        Severity.LOW: "A little repetition never hurt anyone. But we could shorten this.",
-        Severity.MEDIUM: "Your keyboard is starting to feel used. Alias it.",
-        Severity.HIGH: "You have hands. Use them for something new. Alias it.",
-    },
-    "slow_tool": {
-        Severity.LOW: "Living in 2015 is a choice.",
-        Severity.MEDIUM: "The modern equivalents are one `brew install` away.",
-        Severity.HIGH: "It is 2026. Please stop typing `grep`.",
-    },
-    "long_path": {
-        Severity.LOW: "Your fingers have earned a shortcut. Try `cd -`.",
-        Severity.MEDIUM: "That path is longer than my patience. `zoxide` it.",
-        Severity.HIGH: "You're speedrunning tendinitis. Install `zoxide` today.",
-    },
-    "sudo_redo": {
-        Severity.LOW: "Forgot sudo? It happens. `sudo !!` next time.",
-        Severity.MEDIUM: "You have retyped an entire command as root. Please stop.",
-        Severity.HIGH: "`sudo !!` — memorize it, tattoo it, live it.",
-    },
-    "failed_retype": {
-        Severity.LOW: "Every failure is a lesson. You are taking a lot of lessons.",
-        Severity.MEDIUM: "Fail, retry, fail, retry. This is not a workflow.",
-        Severity.HIGH: "Your shell has a `!!` and a `fc`. Please introduce them.",
-    },
-}
-
-
 def _worst_finding_by_detector(findings: tuple[Finding, ...]) -> dict[str, Finding]:
     """Group findings by detector id, keeping the highest-severity one.
 
@@ -98,16 +67,29 @@ def _worst_finding_by_detector(findings: tuple[Finding, ...]) -> dict[str, Findi
     return worst
 
 
-def _roast_line(finding: Finding) -> str | None:
-    """Pick the roast copy for this detector + severity."""
-    detector_roasts = _ROASTS.get(finding.detector)
-    if not detector_roasts:
-        return None
-    return detector_roasts.get(finding.severity)
+def _roast_line(finding: Finding, persona: Persona, fallback: Persona) -> str | None:
+    """Pick the roast copy for this detector + severity from ``persona``.
+
+    Falls back to ``fallback`` (the default persona) for any slot the
+    active persona doesn't override — so a persona only has to write
+    the lines it wants to change.
+    """
+    return persona.roast_for(finding, fallback=fallback)
 
 
-def render_scorecard(scorecard: Scorecard, console: Console) -> None:
-    """Print the scorecard banner + a findings table (or a clean-slate note)."""
+def render_scorecard(
+    scorecard: Scorecard,
+    console: Console,
+    *,
+    persona: Persona | None = None,
+) -> None:
+    """Print the scorecard banner + a findings table (or a clean-slate note).
+
+    ``persona`` selects the roast voice. When ``None``, the default
+    persona is used and output matches the pre-personas M4 behavior.
+    """
+    fallback = default_persona()
+    active = persona if persona is not None else fallback
     style = _GRADE_STYLE.get(scorecard.grade, "bold white")
     banner = Text.assemble(
         (f"{scorecard.grade}", style),
@@ -117,10 +99,12 @@ def render_scorecard(scorecard: Scorecard, console: Console) -> None:
     console.print(Panel.fit(banner, title="Efficiency scorecard", border_style="magenta"))
 
     if not scorecard.has_findings:
-        console.print(
-            "[green]Clean sheet — no habits worth fixing.[/green] "
-            "[dim]Coach is suspicious but proud.[/dim]"
+        clean = active.string(
+            "clean_sheet",
+            fallback=fallback,
+            default="Clean sheet — no habits worth fixing. Coach is suspicious but proud.",
         )
+        console.print(f"[green]{clean}[/green]")
         return
 
     table = Table(header_style="bold magenta", expand=False)
@@ -141,15 +125,18 @@ def render_scorecard(scorecard: Scorecard, console: Console) -> None:
     worst = _worst_finding_by_detector(scorecard.findings)
     if not worst:
         return
+    header = active.string(
+        "takes_header", fallback=fallback, default="Coach's take:"
+    )
     console.print()
-    console.print("[bold magenta]Coach's take:[/bold magenta]")
+    console.print(f"[bold magenta]{header}[/bold magenta]")
     # Iterate in the same worst-first order the table used.
     seen: set[str] = set()
     for finding in scorecard.findings:
         if finding.detector in seen:
             continue
         seen.add(finding.detector)
-        line = _roast_line(finding)
+        line = _roast_line(finding, active, fallback)
         if line is None:
             continue
         console.print(f"  [magenta]•[/magenta] [cyan]{finding.detector}[/cyan]: {line}")

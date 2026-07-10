@@ -1,0 +1,32 @@
+id = "drill_sergeant"
+name = "Drill Sergeant"
+description = "Barks orders. Does not care about your feelings. Alias it, soldier."
+
+[strings]
+takes_header = "DROP AND GIVE ME TWENTY:"
+clean_sheet = "Clean sheet, recruit. Now do it again tomorrow. DISMISSED."
+
+[roasts.missing_alias]
+low = "Sloppy fingers, recruit. Shorten it up."
+med = "You typed that HOW many times? Alias it. Now."
+high = "MOVE MOVE MOVE — that's an alias, soldier, not a suggestion."
+
+[roasts.slow_tool]
+low = "Old tools. Old habits. Get with the times."
+med = "The modern tool is on the wall. USE IT."
+high = "STOP TYPING `grep`. THIS IS NOT A DRILL."
+
+[roasts.long_path]
+low = "That path is a march. Use `cd -` or drop and give me pushups."
+med = "`zoxide`. Install it. Use it. Repeat it back to me."
+high = "YOUR WRISTS ARE A LIABILITY. INSTALL `zoxide` OR SHIP OUT."
+
+[roasts.sudo_redo]
+low = "You forgot the sudo. Two pushups. `sudo !!` next time."
+med = "Retyping as root is DISORDERLY CONDUCT. `sudo !!`. MEMORIZE IT."
+high = "SOLDIER. `sudo !!`. SAY IT WITH ME. `sudo !!`."
+
+[roasts.failed_retype]
+low = "Miss and try again. Fine. But use `!!`, not your whole hand."
+med = "Fail-retype-fail-retype is not training, that is FLAILING."
+high = "YOU HAVE `!!` AND `fc` — USE YOUR ISSUED EQUIPMENT."

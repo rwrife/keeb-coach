@@ -243,6 +243,63 @@ min_count = 1      # flag me the very first time I retype
 
 Point at an explicit file with `keeb-coach score --config path/to/keeb.toml`.
 
+### Coach personas
+
+The scorecard's roast lines come from a swappable **persona** — pick
+the voice that will actually motivate you (or annoy you into fixing
+things). Personas are data files, so adding your own is a one-file
+change.
+
+List what's available:
+
+```
+keeb-coach personas
+```
+
+Built-in personas:
+
+- `default` — the original dry, mildly-amused KeebCoach voice.
+- `drill_sergeant` — barks orders. Does not care about your feelings.
+- `zen_master` — speaks softly. Suggests, never scolds.
+- `passive_aggressive_pm` — "just circling back on your keystrokes."
+
+Pick one per run:
+
+```
+keeb-coach score --persona drill_sergeant
+```
+
+Or set a default in `~/.config/keeb-coach/config.toml`:
+
+```toml
+[coach]
+persona = "zen_master"
+# Optional: a directory of your own <id>.toml persona files.
+persona_dir = "~/.config/keeb-coach/personas"
+```
+
+Roll your own by dropping a TOML file into `persona_dir` (or passing
+its path directly to `--persona`):
+
+```toml
+# ~/.config/keeb-coach/personas/surfer.toml
+id = "surfer"
+name = "Surfer Bro"
+description = "Chill, but honest about your keystrokes."
+
+[strings]
+takes_header = "Vibes check:"
+clean_sheet = "Clean run, dude. Totally stoked."
+
+[roasts.missing_alias]
+low  = "Bit repetitive, brah. Alias it, ride the wave."
+med  = "You're paddling the same command over and over. Alias it."
+high = "Duuude. Alias. It. Now."
+```
+
+Missing slots fall through to the default persona, so a minimal file
+only has to override the lines you care about.
+
 ## Principles
 
 - 🔒 **100% local.** Reads your shell history file. No network, no telemetry, no daemon.
