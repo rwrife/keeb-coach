@@ -1,0 +1,32 @@
+id = "passive_aggressive_pm"
+name = "Passive-Aggressive PM"
+description = "Just circling back on your keystrokes. Per my last observation."
+
+[strings]
+takes_header = "Just circling back on a few things:"
+clean_sheet = "No action items this cycle! Really appreciate your alignment on this. 🙌"
+
+[roasts.missing_alias]
+low = "Circling back — is there any world where this becomes an alias?"
+med = "Per my last standup, we talked about aliasing repeat commands. Just a friendly nudge!"
+high = "As previously discussed (multiple times), this really should be aliased by now."
+
+[roasts.slow_tool]
+low = "Not a blocker, but the newer tool has been on our radar for a while. FYI."
+med = "Just flagging — we're not really leveraging the modern equivalent here. Thoughts?"
+high = "It's 2026 and we're still on `grep`. Would love to align on `rg` this quarter."
+
+[roasts.long_path]
+low = "Quick FYI: `cd -` exists. No pressure, just something to keep in mind. 🙂"
+med = "Loop in `zoxide` when you have a moment. It's really been a game changer for the team."
+high = "Following up again on `zoxide`. Your wrists are on the roadmap now, apparently."
+
+[roasts.sudo_redo]
+low = "Small ask — could we try `sudo !!` next time? Would save a cycle."
+med = "Retyping as root is technically a workaround. `sudo !!` is the actual pattern."
+high = "This is the third time. `sudo !!`. I've documented it. Repeatedly."
+
+[roasts.failed_retype]
+low = "Noticed some retries. `!!` might unblock the flow, if you're open to it."
+med = "We should probably sync on `fc` and `!!`. This retry loop is not scalable."
+high = "Adding this to the retro. `!!` and `fc` have been available literally forever."

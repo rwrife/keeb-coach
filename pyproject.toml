@@ -41,6 +41,9 @@ Issues = "https://github.com/rwrife/keeb-coach/issues"
 [tool.hatch.build.targets.wheel]
 packages = ["src/keeb_coach"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"src/keeb_coach/personas/data" = "keeb_coach/personas/data"
+
 [tool.hatch.build.targets.sdist]
 include = ["src/keeb_coach", "README.md", "PLAN.md", "LICENSE"]
 

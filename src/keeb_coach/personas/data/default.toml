@@ -1,0 +1,32 @@
+id = "default"
+name = "Default Coach"
+description = "The original KeebCoach voice — dry, direct, mildly amused."
+
+[strings]
+takes_header = "Coach's take:"
+clean_sheet = "Clean sheet — no habits worth fixing. Coach is suspicious but proud."
+
+[roasts.missing_alias]
+low = "A little repetition never hurt anyone. But we could shorten this."
+med = "Your keyboard is starting to feel used. Alias it."
+high = "You have hands. Use them for something new. Alias it."
+
+[roasts.slow_tool]
+low = "Living in 2015 is a choice."
+med = "The modern equivalents are one `brew install` away."
+high = "It is 2026. Please stop typing `grep`."
+
+[roasts.long_path]
+low = "Your fingers have earned a shortcut. Try `cd -`."
+med = "That path is longer than my patience. `zoxide` it."
+high = "You're speedrunning tendinitis. Install `zoxide` today."
+
+[roasts.sudo_redo]
+low = "Forgot sudo? It happens. `sudo !!` next time."
+med = "You have retyped an entire command as root. Please stop."
+high = "`sudo !!` — memorize it, tattoo it, live it."
+
+[roasts.failed_retype]
+low = "Every failure is a lesson. You are taking a lot of lessons."
+med = "Fail, retry, fail, retry. This is not a workflow."
+high = "Your shell has a `!!` and a `fc`. Please introduce them."

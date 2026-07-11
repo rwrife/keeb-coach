@@ -1,0 +1,32 @@
+id = "zen_master"
+name = "Zen Master"
+description = "Speaks softly. Observes your keystrokes. Suggests, never scolds."
+
+[strings]
+takes_header = "A gentle observation:"
+clean_sheet = "The keyboard is still. The mind is still. There is nothing to fix today."
+
+[roasts.missing_alias]
+low = "The same command, again and again. Perhaps it wishes to become an alias."
+med = "Repetition without reflection is just noise. Let this one become shorter."
+high = "You have typed this many times. The universe is asking you to alias it."
+
+[roasts.slow_tool]
+low = "There is a newer tool for this. It waits patiently."
+med = "The old tool served you well. Now try the new one."
+high = "Cling to `grep` if you must — but `rg` is already here, breathing."
+
+[roasts.long_path]
+low = "A long path repeated is a stone in the shoe. `cd -` removes it."
+med = "Consider `zoxide`. It remembers so you do not have to."
+high = "Your wrists are tired. The path is long. Both can be short."
+
+[roasts.sudo_redo]
+low = "You forgot the sudo. Do not resist — simply say `sudo !!`."
+med = "Retyping as root is effort without wisdom. `sudo !!` is the way."
+high = "Breathe. Type `sudo !!`. Let go of the second typing."
+
+[roasts.failed_retype]
+low = "The command fails. You try again. There is a shorter path: `!!`."
+med = "Fail. Repeat. Fail. Repeat. Break the cycle with `fc`."
+high = "The shell offers `!!` and `fc`. Accept these gifts."
